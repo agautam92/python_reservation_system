@@ -1,10 +1,12 @@
-from abc import abstractmethod, ABCMeta
+from abc import ABCMeta, ABC
 
 from .constant_var import BOOKING_TYPE
 from .location import Location
 
+from threading import Lock, Thread
 
-class HotelAbstract(metaclass=ABCMeta):
+
+class HotelAbstract(ABC):
     """
      At least 10, 5, 3 rooms, suites, penthouse are required to add a hotel in our portal.
      Rate logic can be implemented by subclassed based on location and demand.
@@ -17,6 +19,7 @@ class HotelAbstract(metaclass=ABCMeta):
     avail_suites = {"rate": suites.get("rate"), "available": suites.get("total")}
     avail_penthouse = {"rate": penthouse.get("rate"), "available": penthouse.get("total")}
     location = Location()
+    lock = Lock
 
     @classmethod
     def get_room_rate(cls):
@@ -46,7 +49,17 @@ class HotelAbstract(metaclass=ABCMeta):
 class Hotel(HotelAbstract):
 
     @classmethod
-    def check_availability(cls, no_booking, room_type):
+    def _validate_customer(cls, **kwargs):
+        """
+            Here a Third party service will do document verification of a user.
+        :param kwargs:
+        :return: Boolean
+        """
+        customer_data = kwargs.keys()
+        return {"success": True, "msg": "Validated"}
+
+    @classmethod
+    def _check_availability(cls, no_booking, room_type):
         if room_type == BOOKING_TYPE.get(1):
             if cls.rooms.get("available") >= no_booking:
                 return True
@@ -64,17 +77,29 @@ class Hotel(HotelAbstract):
                 return False
 
     @classmethod
-    def book(cls, no_booking, room_type):
-        validated = cls.check_availability(no_booking, room_type)
-        if validated:
+    def book(cls, no_booking, room_type, **customer):
+        """
+        availability and customer validation must be excuted in separated threads. as these will require
+        different types of network calls.
+        :param no_booking:
+        :param room_type:
+        :param customer:
+        :return: bool, str
+        """
+        is_available = cls._check_availability(no_booking, room_type)
+        validate_customer = cls._validate_customer(**customer)
+        if is_available and validate_customer:
+            cls.lock.acquire()
             if room_type == BOOKING_TYPE.get(1):
                 cls.rooms['availability'] = cls.rooms.get("availability") - no_booking
             elif room_type == BOOKING_TYPE.get(2):
                 cls.suites['availability'] = cls.suites.get("availability") - no_booking
             elif room_type == BOOKING_TYPE.get(3):
                 cls.penthouse['availability'] = cls.penthouse.get("availability") - no_booking
+            cls.lock.release()
             cls.set_rate()
-            return True
+            return True, ""
+        return False, "Not available"
 
     @classmethod
     def set_rate(cls):
