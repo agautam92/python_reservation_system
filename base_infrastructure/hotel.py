@@ -52,6 +52,7 @@ class Hotel(HotelAbstract):
     def _validate_customer(cls, **kwargs):
         """
             Here a Third party service will do document verification of a user.
+            and document verification status will be updated in DB
         :param kwargs:
         :return: Boolean
         """
@@ -87,8 +88,9 @@ class Hotel(HotelAbstract):
         :return: bool, str
         """
         is_available = cls._check_availability(no_booking, room_type)
-        validate_customer = cls._validate_customer(**customer)
-        if is_available and validate_customer:
+        document_verification = Thread(target=cls._validate_customer, kwargs=customer, daemon=True)
+        document_verification.start()
+        if is_available:
             cls.lock.acquire()
             if room_type == BOOKING_TYPE.get(1):
                 cls.rooms['availability'] = cls.rooms.get("availability") - no_booking
